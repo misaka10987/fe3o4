@@ -4,7 +4,13 @@ use dashmap::DashMap;
 
 use super::Register;
 
-pub struct RegTab<T: Register>(pub(crate) DashMap<&'static str, T>);
+pub struct RegTab<T: Register>(DashMap<&'static str, T>);
+
+impl<T: Register> RegTab<T> {
+    pub fn new() -> Self {
+        Self(DashMap::new())
+    }
+}
 
 pub trait HasRegTab: Register {
     fn reg_rab() -> &'static RegTab<Self>;
@@ -31,7 +37,7 @@ pub use lazy_static;
 macro_rules! def_regtab {
     ($t:ty,$i:ident) => {
         $crate::tab::lazy_static::lazy_static! {
-            pub static ref $i: $crate::RegTab<$t> = $crate::RegTab($crate::tab::dashmap::DashMap::new());
+            pub static ref $i: $crate::RegTab<$t> = $crate::RegTab::new();
         }
         impl $crate::HasRegTab for $t {
             fn reg_rab() -> &'static $crate::RegTab<Self> {
