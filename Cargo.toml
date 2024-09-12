@@ -2,6 +2,14 @@
 name = "fe3o4"
 version = "0.1.0"
 edition = "2021"
+authors = ["misaka10987 <misaka10987@outlook.com>"]
+description = "A Registry System for Game Development."
+documentation = "https://github.com/misaka10987/fe3o4"
+homepage = "https://github.com/misaka10987/fe3o4"
+repository = "https://github.com/misaka10987/fe3o4"
+readme = "README.md"
+keywords = ["fe3o4", "game", "registry"]
+license = "MIT"
 
 [dependencies]
 dashmap = "6.1.0"
