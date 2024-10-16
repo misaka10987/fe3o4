@@ -10,6 +10,7 @@ use serde::{de::Visitor, Deserialize, Serialize};
 
 use super::{HasRegTab, Register};
 
+/// Identifier for a registered item.
 #[derive(PartialOrd, Serialize)]
 #[serde(transparent)]
 pub struct Id<T: Register> {
@@ -18,16 +19,24 @@ pub struct Id<T: Register> {
     _phantom: PhantomData<T>,
 }
 
-pub const fn id<T: Register>(x: &'static str) -> Id<T> {
-    Id {
-        id: x,
-        _phantom: PhantomData,
+impl<T: Register> Id<T> {
+    /// Interpret a string as an `Id`.
+    pub const fn new(id: &'static str) -> Self {
+        Self {
+            id,
+            _phantom: PhantomData,
+        }
     }
-}
 
-pub const unsafe fn tmp_id<T: Register>(x: &str) -> Id<T> {
-    let p = x as *const str;
-    id(unsafe { &*p })
+    /// The identifier part.
+    pub fn idname(&self) -> &'static str {
+        self.id.split(':').last().unwrap()
+    }
+
+    /// The module name part.
+    pub fn modname(&self) -> &'static str {
+        self.id.split(':').next().unwrap()
+    }
 }
 
 impl<T: Register> Clone for Id<T> {
@@ -90,12 +99,9 @@ impl<T: Register> Hash for Id<T> {
     }
 }
 
-impl<T: Register> Id<T> {
-    pub fn idname(&self) -> &'static str {
-        self.id.split(':').last().unwrap()
-    }
-    pub fn modname(&self) -> &'static str {
-        self.id.split(':').next().unwrap()
+impl<T: Register> From<&'static str> for Id<T> {
+    fn from(value: &'static str) -> Self {
+        Self::new(value)
     }
 }
 
@@ -112,10 +118,10 @@ impl<'de, T: HasRegTab> Visitor<'de> for IdVisitor<T> {
     where
         E: serde::de::Error,
     {
-        let tab = T::reg_rab();
+        let tab = T::reg_tab();
         let res = tab.view(v, |k, _| *k);
         match res {
-            Some(i) => Ok(id(i)),
+            Some(i) => Ok(Id::new(i)),
             None => Err(E::invalid_value(
                 serde::de::Unexpected::Str(v),
                 &"an already registered id string",

@@ -6,13 +6,15 @@ use std::ops::Deref;
 
 use dashmap::mapref::one::Ref;
 pub use prelude::*;
-use serde::{de::DeserializeOwned, Serialize};
 
-pub trait Register: Sync + Serialize + DeserializeOwned + 'static {}
-impl<T> Register for T where T: Sync + Serialize + DeserializeOwned + 'static {}
+pub trait Register: 'static + Sized {}
+impl<T> Register for T where T: 'static + Sized {}
 
+/// A smart pointer to an either registered resource or orphan.
 pub enum Rp<T: Register> {
+    /// The item is found in a registry table.
     Registered(Ref<'static, &'static str, T>),
+    /// The item is orphan, or not in registry table.
     Orphan(Box<T>),
 }
 

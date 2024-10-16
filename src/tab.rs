@@ -12,8 +12,10 @@ impl<T: Register> RegTab<T> {
     }
 }
 
+/// A type having a registry table definition.
 pub trait HasRegTab: Register {
-    fn reg_rab() -> &'static RegTab<Self>;
+    /// Registry table for this type.
+    fn reg_tab() -> &'static RegTab<Self>;
 }
 
 impl<T: Register> Deref for RegTab<T> {
@@ -30,18 +32,24 @@ impl<T: Register> DerefMut for RegTab<T> {
     }
 }
 
-pub use dashmap;
-pub use static_init;
+#[macro_export]
+macro_rules! has_regtab {
+    ($t:ty,$e:expr) => {
+        impl $crate::HasRegTab for $t {
+            fn reg_tab() -> &'static $crate::RegTab<Self> {
+                &$e
+            }
+        }
+    };
+}
 
+/// # Important
+/// Add `static_init` to your dependencies to use this macro.
 #[macro_export]
 macro_rules! def_regtab {
     ($t:ty,$i:ident) => {
-        #[$crate::tab::static_init::dynamic]
-        pub static $i: $crate::RegTab<$t> = $crate::RegTab::new();
-        impl $crate::HasRegTab for $t {
-            fn reg_rab() -> &'static $crate::RegTab<Self> {
-                &$i
-            }
-        }
+        #[::static_init::dynamic]
+        static $i: $crate::RegTab<$t> = $crate::RegTab::new();
+        $crate::has_regtab!($t, $i);
     };
 }
