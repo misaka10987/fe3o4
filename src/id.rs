@@ -6,7 +6,10 @@ use std::{
     ops::Deref,
 };
 
-use serde::{de::Visitor, Deserialize, Serialize};
+use serde::{
+    de::{Unexpected, Visitor},
+    Deserialize, Serialize,
+};
 
 use super::{HasRegTab, Register};
 
@@ -123,7 +126,7 @@ impl<'de, T: HasRegTab> Visitor<'de> for IdVisitor<T> {
         match res {
             Some(i) => Ok(Id::new(i)),
             None => Err(E::invalid_value(
-                serde::de::Unexpected::Str(v),
+                Unexpected::Str(v),
                 &"an already registered id string",
             )),
         }
