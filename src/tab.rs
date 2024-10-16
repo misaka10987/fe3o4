@@ -31,14 +31,13 @@ impl<T: Register> DerefMut for RegTab<T> {
 }
 
 pub use dashmap;
-pub use lazy_static;
+pub use static_init;
 
 #[macro_export]
 macro_rules! def_regtab {
     ($t:ty,$i:ident) => {
-        $crate::tab::lazy_static::lazy_static! {
-            pub static ref $i: $crate::RegTab<$t> = $crate::RegTab::new();
-        }
+        #[$crate::tab::static_init::dynamic]
+        pub static $i: $crate::RegTab<$t> = $crate::RegTab::new();
         impl $crate::HasRegTab for $t {
             fn reg_rab() -> &'static $crate::RegTab<Self> {
                 &$i
