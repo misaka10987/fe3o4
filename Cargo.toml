@@ -11,6 +11,16 @@ readme = "README.md"
 keywords = ["fe3o4", "game", "registry"]
 license = "MIT"
 
+[lib]
+crate-type = ["rlib", "cdylib"]
+
 [dependencies]
 dashmap = "6.1.0"
 serde = { version = "1.0.210", features = ["derive"] }
+
+[target.'cfg(target_family="wasm")'.dependencies]
+tsify-next = { version = "0.5.5", features = ["js"] }
+wasm-bindgen = { version = "0.2.100" }
+
+[features]
+static-init = []

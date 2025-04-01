@@ -50,38 +50,53 @@ macro_rules! has_regtab {
 /// Define a static variable as registry table for specified type,
 /// automatically calling `has_regtab`.
 ///
-/// `_REGTAB` is used as name of the variable unless an identifier is specified in arguments,
+/// `_REGTAB` is used as name of the variable unless an identifier is supplied via arguments,
 /// which may lead to naming conflicts.
 /// In such case, supply a name manually.
-/// 
+///
 /// # Example
 /// ```
 /// use fe3o4::def_regtab;
-/// 
+///
 /// struct Foo {};
 /// struct Bar {};
-/// 
+///
 /// def_regtab!(Foo);
 /// def_regtab!(Bar, REG_BAR);
 /// ```
-/// with `Cargo.toml`:
-/// ```toml
-/// [dependencies]
-/// static_init = "1"
-/// ```
 ///
-/// # Important
-/// 
-/// The initialization of registry table use `static_init` to approach best performance.
-/// Add `static_init` to your dependencies before using this macro.
+/// # `static_init` Support
+///
+/// The default implementation uses [`std::sync::LazyLock`] for handling the static initialization of the registry table.
+/// However, `static_init` crate can be optionally used as an alternative, with the following steps:
+/// - Enable the `static-init` feature for this crate
+/// - **(IMPORTANT)** Add `static_init` to YOUR dependencies (since re-exports of proc-macros are currently not supported)
 #[macro_export]
 macro_rules! def_regtab {
     ($t:ty) => {
         def_regtab!($t, _REGTAB);
     };
+    ($t:ty, $i:ident) => {
+        $crate::def_regtab_impl!($t, $i);
+    };
+}
+
+#[macro_export]
+#[cfg(feature = "static-init")]
+macro_rules! def_regtab_impl {
     ($t:ty,$i:ident) => {
         #[::static_init::dynamic]
         static $i: $crate::RegTab<$t> = $crate::RegTab::new();
+        $crate::has_regtab!($t, $i);
+    };
+}
+
+#[macro_export]
+#[cfg(not(feature = "static-init"))]
+macro_rules! def_regtab_impl {
+    ($t:ty,$i:ident) => {
+        static $i: std::sync::LazyLock<$crate::RegTab<$t>> =
+            std::sync::LazyLock::new(|| $crate::RegTab::new());
         $crate::has_regtab!($t, $i);
     };
 }

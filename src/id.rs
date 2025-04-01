@@ -1,3 +1,8 @@
+use super::{HasRegTab, Register};
+use serde::{
+    de::{Unexpected, Visitor},
+    Deserialize, Serialize,
+};
 use std::{
     borrow::Borrow,
     fmt::{Debug, Display},
@@ -6,43 +11,54 @@ use std::{
     ops::Deref,
 };
 
-use serde::{
-    de::{Unexpected, Visitor},
-    Deserialize, Serialize,
-};
+#[cfg(target_family = "wasm")]
+use {tsify_next::Tsify, wasm_bindgen::prelude::wasm_bindgen};
 
-use super::{HasRegTab, Register};
-
-/// Identifier for a registered item.
-#[derive(PartialOrd, Serialize)]
+/// This is the string identifier used to access reusable resource that is registered during the game.
+///
+/// A recommended naming style is to prefix the id with a namespace before a `:`, e.g. `modname:actual-id`.
+#[derive(Clone, Copy, Serialize)]
 #[serde(transparent)]
-pub struct Id<T: Register> {
+#[cfg_attr(target_family = "wasm", derive(Tsify))]
+#[cfg_attr(target_family = "wasm", tsify(into_wasm_abi, from_wasm_abi))]
+pub struct Id<T>(#[cfg_attr(target_family = "wasm", tsify(type = "string"))] IdInner<T>)
+where
+    T: 'static + Register;
+
+impl<T> Id<T> {
+    /// Interpret a string as an [`Id`].
+    pub const fn new(id: &'static str) -> Self {
+        Self(IdInner {
+            id,
+            _phantom: PhantomData,
+        })
+    }
+
+    /// Resolve the local id part.
+    pub fn get_id(&self) -> &'static str {
+        self.0.id.split(':').last().unwrap()
+    }
+
+    /// Resolve the modname part.
+    pub fn get_mod(&self) -> &'static str {
+        self.0.id.split(':').next().unwrap()
+    }
+}
+
+/// Seperate definition of this struct from [`Id`] is theoratically unnecessary.
+/// Currently it is a walkaround to let `tsify-next` generate types with correct generic arguments.
+#[derive(Serialize)]
+#[serde(transparent)]
+struct IdInner<T>
+where
+    T: Register,
+{
     id: &'static str,
     // `serde_derive` intelligently skips its serialization.
     _phantom: PhantomData<T>,
 }
 
-impl<T: Register> Id<T> {
-    /// Interpret a string as an `Id`.
-    pub const fn new(id: &'static str) -> Self {
-        Self {
-            id,
-            _phantom: PhantomData,
-        }
-    }
-
-    /// The identifier part.
-    pub fn idname(&self) -> &'static str {
-        self.id.split(':').last().unwrap()
-    }
-
-    /// The module name part.
-    pub fn modname(&self) -> &'static str {
-        self.id.split(':').next().unwrap()
-    }
-}
-
-impl<T: Register> Clone for Id<T> {
+impl<T: Register> Clone for IdInner<T> {
     fn clone(&self) -> Self {
         Self {
             id: self.id,
@@ -51,13 +67,13 @@ impl<T: Register> Clone for Id<T> {
     }
 }
 
-impl<T: Register> Copy for Id<T> {}
+impl<T: Register> Copy for IdInner<T> {}
 
 impl<T: Register> Deref for Id<T> {
     type Target = str;
 
     fn deref(&self) -> &Self::Target {
-        self.id
+        self.0.id
     }
 }
 
@@ -69,36 +85,42 @@ impl<T: Register> Borrow<str> for Id<T> {
 
 impl<T: Register> Display for Id<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.id)
+        f.write_str(&self.0.id)
     }
 }
 
 impl<T: Register> Debug for Id<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.id)
+        f.write_str(&self.0.id)
     }
 }
 
 impl<T: Register> PartialEq for Id<T> {
     fn eq(&self, other: &Self) -> bool {
-        self.id == other.id
+        self.0.id == other.0.id
     }
 }
 
 impl<T: Register> Eq for Id<T> {}
+
+impl<T: Register> PartialOrd for Id<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.0.id.partial_cmp(&other.0.id)
+    }
+}
 
 impl<T: Register> Ord for Id<T>
 where
     T: Ord,
 {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.id.cmp(&other.id)
+        self.0.id.cmp(&other.0.id)
     }
 }
 
 impl<T: Register> Hash for Id<T> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.id.hash(state);
+        self.0.id.hash(state);
     }
 }
 
