@@ -2,101 +2,57 @@ use std::ops::{Deref, DerefMut};
 
 use dashmap::DashMap;
 
-use super::Register;
+use crate::{Id, err::ResNotFoundError};
 
-/// A registry table to store mappings from string IDs to entries.
-pub struct RegTab<T: Register>(DashMap<&'static str, T>);
+/// A registry for storing resources mapped by [`Id`].
+///
+/// The registry is generally a read-only hashmap with [`Id`]s as keys and underlying `T`s as values,
+/// and can be accessed as a regular hashmap.
+///
+/// In order to create a `Registry`, use [`RegistryBuilder`].
+pub struct Registry<T>(dashmap::ReadOnlyView<Id<T>, T>);
 
-impl<T: Register> RegTab<T> {
-    /// Create an empty registry table.
-    pub fn new() -> Self {
-        Self(DashMap::new())
+impl<T> Registry<T> {
+    pub fn reg(&self, id: Id<T>) -> Result<&T, ResNotFoundError<T>> {
+        self.get(&id).ok_or(id.into())
     }
 }
 
-/// A type having a registry table definition.
-pub trait HasRegTab: Register {
-    /// Registry table for this type.
-    fn reg_tab() -> &'static RegTab<Self>;
-}
-
-impl<T: Register> Deref for RegTab<T> {
-    type Target = DashMap<&'static str, T>;
+impl<T> Deref for Registry<T> {
+    type Target = dashmap::ReadOnlyView<Id<T>, T>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
-impl<T: Register> DerefMut for RegTab<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
+/// A builder for [`Registry`].
+///
+/// This is generally a mutable hashmap.
+/// Initialize a [`Registry`] by inserting into this builder and calling the [`Self::build`] method.
+pub struct RegistryBuilder<T>(DashMap<Id<T>, T>);
+
+impl<T> RegistryBuilder<T> {
+    /// Create an empty builder.
+    pub fn new() -> Self {
+        Self(DashMap::new())
+    }
+    /// Create a [`Registry`].
+    pub fn build(self) -> Registry<T> {
+        Registry(self.0.into_read_only())
     }
 }
 
-/// Implement `HasRegTab` for a certain type with provided registry table.
-#[macro_export]
-macro_rules! has_regtab {
-    ($t:ty,$e:expr) => {
-        impl $crate::HasRegTab for $t {
-            #[inline]
-            fn reg_tab() -> &'static $crate::RegTab<Self> {
-                &$e
-            }
-        }
-    };
+impl<T> Deref for RegistryBuilder<T> {
+    type Target = DashMap<Id<T>, T>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
-/// Define a static variable as registry table for specified type,
-/// automatically calling `has_regtab`.
-///
-/// `_REGTAB` is used as name of the variable unless an identifier is supplied via arguments,
-/// which may lead to naming conflicts.
-/// In such case, supply a name manually.
-///
-/// # Example
-/// ```
-/// use fe3o4::def_regtab;
-///
-/// struct Foo {};
-/// struct Bar {};
-///
-/// def_regtab!(Foo);
-/// def_regtab!(Bar, REG_BAR);
-/// ```
-///
-/// # `static_init` Support
-///
-/// The default implementation uses [`std::sync::LazyLock`] for handling the static initialization of the registry table.
-/// However, `static_init` crate can be optionally used as an alternative, with the following steps:
-/// - Enable the `static-init` feature for this crate
-/// - **(IMPORTANT)** Add `static_init` to YOUR dependencies (since re-exports of proc-macros are currently not supported)
-#[macro_export]
-macro_rules! def_regtab {
-    ($t:ty) => {
-        def_regtab!($t, _REGTAB);
-    };
-    ($t:ty, $i:ident) => {
-        $crate::def_regtab_impl!($t, $i);
-    };
-}
-
-#[macro_export]
-#[cfg(feature = "static-init")]
-macro_rules! def_regtab_impl {
-    ($t:ty,$i:ident) => {
-        #[::static_init::dynamic]
-        static $i: $crate::RegTab<$t> = $crate::RegTab::new();
-        $crate::has_regtab!($t, $i);
-    };
-}
-
-#[macro_export]
-#[cfg(not(feature = "static-init"))]
-macro_rules! def_regtab_impl {
-    ($t:ty,$i:ident) => {
-        static $i: std::sync::LazyLock<$crate::RegTab<$t>> =
-            std::sync::LazyLock::new(|| $crate::RegTab::new());
-        $crate::has_regtab!($t, $i);
-    };
+impl<T> DerefMut for RegistryBuilder<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
 }

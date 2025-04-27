@@ -1,165 +1,170 @@
-use super::{HasRegTab, Register};
-use serde::{
-    de::{Unexpected, Visitor},
-    Deserialize, Serialize,
-};
+use arrayvec::{ArrayString, CapacityError};
+use serde_with::{DeserializeFromStr, SerializeDisplay};
 use std::{
-    borrow::Borrow,
+    any::type_name,
     fmt::{Debug, Display},
     hash::Hash,
     marker::PhantomData,
     ops::Deref,
+    str::FromStr,
 };
 
-#[cfg(target_family = "wasm")]
-use {tsify_next::Tsify, wasm_bindgen::prelude::wasm_bindgen};
+use crate::err::InvalidIdError;
 
-/// This is the string identifier used to access reusable resource that is registered during the game.
+/// A string identifier for a resource in the registry.
 ///
-/// A recommended naming style is to prefix the id with a namespace before a `:`, e.g. `modname:actual-id`.
-#[derive(Clone, Copy, Serialize)]
-#[serde(transparent)]
-#[cfg_attr(target_family = "wasm", derive(Tsify))]
+/// The type parameter `T` indicates type of the underlying resource.
+///
+/// # Specifications
+///
+/// An `Id` consists of two parts: a `module` part for namespacing uses and a `name` part for identification.
+/// Each part is an ASCII string made up with uppercase or lowercase letters, digits, hyphen, period and underscore,
+/// with a maximum length of 12. i.e. `^[a-zA-Z0-9._-]{1,12}$`.
+///
+/// The bahaviour is undefined unless conditions above are satisfied.
+///
+/// # String Representation
+///
+/// String representation for a certain `Id` would be the `module` part and `name` part concatenated by a slash (`/`).
+/// e.g. `module/name`.
+///
+/// # Comparison
+///
+/// `Id` is guaranteed to have the same comparison behaviour as its corresponding string representation.
+#[derive(SerializeDisplay, DeserializeFromStr)]
+#[cfg_attr(target_family = "wasm", derive(tsify_next::Tsify))]
 #[cfg_attr(target_family = "wasm", tsify(into_wasm_abi, from_wasm_abi))]
-pub struct Id<T>(#[cfg_attr(target_family = "wasm", tsify(type = "string"))] IdInner<T>)
-where
-    T: 'static + Register;
+#[repr(transparent)]
+pub struct Id<T>(#[cfg_attr(target_family = "wasm", tsify(type = "string"))] IdInner<T>);
 
 impl<T> Id<T> {
-    /// Interpret a string as an [`Id`].
-    pub const fn new(id: &'static str) -> Self {
+    /// Create an `Id` with specified `module` and `name` part.
+    pub const fn new(module: ArrayString<12>, name: ArrayString<12>) -> Self {
         Self(IdInner {
-            id,
-            _phantom: PhantomData,
+            module,
+            name,
+            _t: PhantomData,
         })
     }
-
-    /// Resolve the local id part.
-    pub fn get_id(&self) -> &'static str {
-        self.0.id.split(':').last().unwrap()
-    }
-
-    /// Resolve the modname part.
-    pub fn get_mod(&self) -> &'static str {
-        self.0.id.split(':').next().unwrap()
-    }
 }
 
-/// Seperate definition of this struct from [`Id`] is theoratically unnecessary.
-/// Currently it is a walkaround to let `tsify-next` generate types with correct generic arguments.
-#[derive(Serialize)]
-#[serde(transparent)]
-struct IdInner<T>
-where
-    T: Register,
-{
-    id: &'static str,
-    // `serde_derive` intelligently skips its serialization.
-    _phantom: PhantomData<T>,
+/// Create an [`Id`] from string.
+///
+/// # Panics
+///
+/// This function panics if argument is not a valid [`Id`].
+pub fn id<T>(id: &str) -> Id<T> {
+    id.parse().unwrap()
 }
 
-impl<T: Register> Clone for IdInner<T> {
-    fn clone(&self) -> Self {
-        Self {
-            id: self.id,
-            _phantom: PhantomData,
-        }
-    }
-}
-
-impl<T: Register> Copy for IdInner<T> {}
-
-impl<T: Register> Deref for Id<T> {
-    type Target = str;
+impl<T> Deref for Id<T> {
+    type Target = IdInner<T>;
 
     fn deref(&self) -> &Self::Target {
-        self.0.id
+        &self.0
     }
 }
 
-impl<T: Register> Borrow<str> for Id<T> {
-    fn borrow(&self) -> &str {
-        &self
+impl<T> Clone for Id<T> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
     }
 }
 
-impl<T: Register> Display for Id<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0.id)
-    }
-}
+impl<T> Copy for Id<T> {}
 
-impl<T: Register> Debug for Id<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0.id)
-    }
-}
-
-impl<T: Register> PartialEq for Id<T> {
+impl<T> PartialEq for Id<T> {
     fn eq(&self, other: &Self) -> bool {
-        self.0.id == other.0.id
+        self.0 == other.0
     }
 }
 
-impl<T: Register> Eq for Id<T> {}
+impl<T> Eq for Id<T> {}
 
-impl<T: Register> PartialOrd for Id<T> {
+impl<T> PartialOrd for Id<T> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.0.id.partial_cmp(&other.0.id)
+        self.0.partial_cmp(&other.0)
     }
 }
 
-impl<T: Register> Ord for Id<T>
-where
-    T: Ord,
-{
+impl<T> Ord for Id<T> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.0.id.cmp(&other.0.id)
+        self.0.cmp(&other.0)
     }
 }
 
-impl<T: Register> Hash for Id<T> {
+impl<T> Hash for Id<T> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.0.id.hash(state);
+        self.module.hash(state);
+        self.name.hash(state);
     }
 }
 
-impl<T: Register> From<&'static str> for Id<T> {
-    fn from(value: &'static str) -> Self {
-        Self::new(value)
+impl<T> Debug for Id<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let t = type_name::<T>();
+        write!(f, "Id::<{t}>(\"{self}\")")
     }
 }
 
-struct IdVisitor<T>(PhantomData<T>);
+pub struct IdInner<T> {
+    pub module: ArrayString<12>,
+    pub name: ArrayString<12>,
+    _t: PhantomData<T>,
+}
 
-impl<'de, T: HasRegTab> Visitor<'de> for IdVisitor<T> {
-    type Value = Id<T>;
-
-    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(formatter, "an already registered id string")
-    }
-
-    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-    where
-        E: serde::de::Error,
-    {
-        let tab = T::reg_tab();
-        let res = tab.view(v, |k, _| *k);
-        match res {
-            Some(i) => Ok(Id::new(i)),
-            None => Err(E::invalid_value(
-                Unexpected::Str(v),
-                &"an already registered id string",
-            )),
+impl<T> Clone for IdInner<T> {
+    fn clone(&self) -> Self {
+        Self {
+            module: self.module.clone(),
+            name: self.name.clone(),
+            _t: PhantomData,
         }
     }
 }
 
-impl<'de, T: HasRegTab> Deserialize<'de> for Id<T> {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        deserializer.deserialize_str(IdVisitor::<T>(PhantomData))
+impl<T> Copy for IdInner<T> {}
+
+impl<T> PartialEq for IdInner<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.module == other.module && self.name == other.name
+    }
+}
+
+impl<T> Eq for IdInner<T> {}
+
+impl<T> PartialOrd for IdInner<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<T> Ord for IdInner<T> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        match self.module.cmp(&other.module) {
+            std::cmp::Ordering::Equal => self.name.cmp(&other.name),
+            x => x,
+        }
+    }
+}
+
+impl<T> Display for Id<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}/{}", self.module, self.name)
+    }
+}
+
+impl<T> FromStr for Id<T> {
+    type Err = InvalidIdError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let it = s.split('/');
+        let parts = it.collect::<Vec<_>>();
+        if parts.len() != 2 {
+            return Err(InvalidIdError::InvalidParts);
+        }
+        let module = ArrayString::<12>::from(parts[0]).map_err(CapacityError::simplify)?;
+        let name = ArrayString::<12>::from(parts[1]).map_err(CapacityError::simplify)?;
+        Ok(Self::new(module, name))
     }
 }
